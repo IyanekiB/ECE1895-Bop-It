@@ -1,0 +1,94 @@
+// PSEUDOCODE FOR ATmega328P “Cyberpunk Katana” BOP-IT!
+
+// ----- GLOBALS & INITIALIZATION -----
+HIGH_SCORE_ADDR ← EEPROM address for high score
+INITIAL_INTERVAL ← starting detection window
+TIME_DECREMENT ← amount to shrink interval every ten successes
+LEVEL_COLORS ← [color1, color2, …]  // LED colors for each level
+
+setup():
+    configure power switch pin
+    configure start button pin
+    configure audio output
+    configure LED strip (NeoPixel)
+    configure rotary encoder input
+    configure accelerometer interface
+    configure sheath sensor input
+    configure OLED or serial for score display
+    highScore ← EEPROM.read(HIGH_SCORE_ADDR)
+
+main():
+    setup()
+    loop forever:
+        if powerSwitch is OFF:
+            enter deep sleep
+        wait for startButton press
+        gameLoop()
+
+// ----- GAME LOOP -----
+gameLoop():
+    currentScore ← 0
+    detectionInterval ← INITIAL_INTERVAL
+    level ← 0
+    updateLEDColor(LEVEL_COLORS[level])
+    while true:
+        command ← pickRandom([LIGHT_IT, SWING_IT, SHEATH_IT])
+        playAudioCue(command)        // “Light It!”, “Swing It!”, or “Sheath It!”
+        startTime ← millis()
+        if waitForCorrectAction(command, detectionInterval):
+            handleSuccess()
+            currentScore++
+            if currentScore > highScore:
+                highScore ← currentScore
+                EEPROM.write(HIGH_SCORE_ADDR, highScore)
+            if currentScore mod 10 == 0:
+                detectionInterval -= TIME_DECREMENT
+                level++
+                updateLEDColor(LEVEL_COLORS[level])
+        else:
+            handleFailure()
+            showGameOver(currentScore, highScore)
+            break
+
+// ----- INPUT HANDLING -----
+waitForCorrectAction(cmd, timeout):
+    while millis() - startTime < timeout:
+        if cmd == LIGHT_IT and encoderRotated():
+            return true
+        if cmd == SWING_IT and accelerometerDetectsSwing():
+            return true
+        if cmd == SHEATH_IT and sheathSensorTriggered():
+            return true
+    return false
+
+// ----- FEEDBACK & SCORING -----
+handleSuccess():
+    flashLEDStrip(GREEN, shortPulse)
+    playTone(successTone)
+
+handleFailure():
+    flashLEDStrip(RED, threeBlinks)
+    playTone(failTone)
+
+// ----- DISPLAY -----
+showGameOver(score, best):
+    clearDisplay()
+    print("GAME OVER")
+    print("SCORE:", score)
+    print("BEST :", best)
+    delay(shortPause)
+
+// ----- UTILITIES -----
+pickRandom(list):
+    return list[randomIndex]
+
+updateLEDColor(color):
+    for each pixel in LED strip:
+        setPixelColor(pixel, color)
+    showStrip()
+
+playAudioCue(cmd):
+    switch cmd:
+        case LIGHT_IT: playSample("light_it.wav")
+        case SWING_IT: playSample("swing_it.wav")
+        case SHEATH_IT: playSample("sheath_it.wav")
