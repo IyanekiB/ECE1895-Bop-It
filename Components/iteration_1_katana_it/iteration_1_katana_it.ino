@@ -213,7 +213,7 @@ void runGame() {
   unsigned long interval = (modeCount==1 ? 5000 :
                             modeCount==2 ? 4000 : 3000);
   unsigned long lastCueTime = millis();
-  int score = 98;
+  int score = 0;
 
   // initial score display
   display.clearDisplay();
