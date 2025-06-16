@@ -10,7 +10,7 @@
 #define OLED_RESET       -1    // unused
 #define SWITCH_PIN        2    // START / power toggle
 #define MODE_BTN_PIN      3    // mode select
-#define OLED_POWER_PIN    4
+// #define OLED_POWER_PIN    4
 #define BUZZER_PIN        5
 #define SWING_PIN         7   // Swing It! analog threshold
 #define SHEATH_PIN        6    // Sheath It! digital
@@ -18,10 +18,10 @@
 
 Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
 
-// ───────────────────────────────────────────────
-// Rotary encoder pins & state
-const uint8_t ENC_CLK = 9;
-const uint8_t ENC_DT  = 8;
+  // ───────────────────────────────────────────────
+  // Rotary encoder pins & state
+  const uint8_t ENC_CLK = 9;
+  const uint8_t ENC_DT  = 8;
 
 // RGB LED pins (common‐cathode)
 const uint8_t RED_PIN   = 11;
@@ -102,10 +102,10 @@ void setup() {
   // Initialize pins
   pinMode(SWITCH_PIN,     INPUT_PULLUP);
   pinMode(MODE_BTN_PIN,   INPUT_PULLUP);
-  pinMode(OLED_POWER_PIN, OUTPUT);
+  // pinMode(OLED_POWER_PIN, OUTPUT);
   pinMode(BUZZER_PIN,     OUTPUT);
   pinMode(SHEATH_PIN,     INPUT_PULLUP);
-  digitalWrite(OLED_POWER_PIN, LOW);
+  // digitalWrite(OLED_POWER_PIN, LOW);
   digitalWrite(BUZZER_PIN,   LOW);
 
   // Initialize OLED
@@ -139,7 +139,7 @@ void loop() {
 }
 
 void powerUpAndSelectMode() {
-  digitalWrite(OLED_POWER_PIN, HIGH);
+  // digitalWrite(OLED_POWER_PIN, HIGH);
   delay(10);
 
   // Title screen (interruptible)
@@ -448,5 +448,5 @@ void showGameOverMenu(uint8_t opt) {
 void powerDownOLED() {
   display.clearDisplay();
   display.display();
-  digitalWrite(OLED_POWER_PIN, LOW);
+  // digitalWrite(OLED_POWER_PIN, LOW);
 }

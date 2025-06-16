@@ -1,69 +1,54 @@
 #include <Wire.h>
-#include <Adafruit_Sensor.h>
-#include <Adafruit_LSM6DSO32.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <Arduino_LSM6DSOX.h>
 #include <EEPROM.h>
-#include <math.h>
 
-// ───────────────────────────────────────────────
 // OLED & Game pins
 #define OLED_WIDTH       128
 #define OLED_HEIGHT      64
-#define OLED_RESET       -1    // unused
-#define SWITCH_PIN        2    // START / power toggle
-#define MODE_BTN_PIN      3    // mode select
-#define OLED_POWER_PIN    4
+#define OLED_RESET       -1
+#define SWITCH_PIN        2
+#define MODE_BTN_PIN      3
 #define BUZZER_PIN        5
-#define SHEATH_PIN        6    // Sheath It! digital
-
-// For SPI mode, we need a CS pin
-#define LSM_CS A3
+#define SHEATH_PIN        6
 
 Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
 
-// ───────────────────────────────────────────────
-// I²C accel (replaces SWING_PIN)
-Adafruit_LSM6DSO32 lsm6ds;
-
-// threshold for swing detection (m/s² beyond gravity)
-#define ACCEL_THRESHOLD 5.0  
-
-// ───────────────────────────────────────────────
-// Rotary encoder pins & state
+// Rotary encoder pins
 const uint8_t ENC_CLK = 9;
 const uint8_t ENC_DT  = 8;
-long encPosition      = 0;
-int  lastEncCLK       = LOW;
 
-// RGB LED pins (common‐cathode)
+// RGB LED pins
 const uint8_t RED_PIN   = 11;
 const uint8_t BLUE_PIN  = 12;
 const uint8_t GREEN_PIN = 13;
+
+// encoder state
+long encPosition = 0;
+int  lastEncCLK  = LOW;
+
+// Swing threshold (fixed)
+const float SWING_DELTA_THRESHOLD = 0.8;
+
+// Color palette
 const uint8_t colorTable[][3] = {
-  {255,   0,   0},  // red
-  {  0,   0, 255},  // blue
-  {  0, 255,   0},  // green
-  {255, 255,   0},  // yellow
-  {  0, 255, 255},  // cyan
-  {255,   0, 255},  // magenta
-  {255, 255, 255},  // white
+  {255,   0,   0}, {  0,   0, 255}, {  0, 255,   0},
+  {255, 255,   0}, {  0, 255, 255}, {255,   0, 255}, {255, 255, 255}
 };
 const uint8_t NUM_COLORS = sizeof(colorTable) / sizeof(colorTable[0]);
 
-// ───────────────────────────────────────────────
-// High‐score persistence
+// EEPROM & Game state
 const int EEPROM_ADDR_HIGH = 0;
 int highScore = 0;
+bool oledOn = false;
+uint8_t modeCount = 1;
+int lastModeState = HIGH;
 
-// ───────────────────────────────────────────────
-// Game state
-bool    oledOn        = false;
-uint8_t modeCount     = 1;    // 1=Easy,2=Medium,3=Hard
-int     lastModeState = HIGH;
+// IMU state for swing detection
+float lastX = 0, lastY = 0, lastZ = 0;
 
-// ───────────────────────────────────────────────
-// Debounced falling‐edge detector for SWITCH_PIN
+// Power toggle
 bool checkPowerToggle() {
   static int last = HIGH;
   int cur = digitalRead(SWITCH_PIN);
@@ -79,8 +64,7 @@ bool checkPowerToggle() {
   return false;
 }
 
-// ───────────────────────────────────────────────
-// Update encoder position; call frequently
+// Rotary encoder update
 void updateEncoder() {
   int clk = digitalRead(ENC_CLK);
   if (clk != lastEncCLK) {
@@ -90,109 +74,85 @@ void updateEncoder() {
   lastEncCLK = clk;
 }
 
-// ───────────────────────────────────────────────
-// Drive common‐cathode RGB at full on/off
+// Set RGB LED color
 void setRGB(uint8_t r, uint8_t g, uint8_t b) {
   digitalWrite(RED_PIN,   r > 128 ? HIGH : LOW);
   digitalWrite(GREEN_PIN, g > 128 ? HIGH : LOW);
   digitalWrite(BLUE_PIN,  b > 128 ? HIGH : LOW);
 }
 
-// ───────────────────────────────────────────────
-// Read accelerometer, compute |Δ| from 1g, return true if it exceeds threshold
-bool detectSwing() {
-  sensors_event_t accel;
-  lsm6ds.getEvent(&accel, nullptr, nullptr);
-  float mx = accel.acceleration.x;
-  float my = accel.acceleration.y;
-  float mz = accel.acceleration.z;
-  float mag = sqrt(mx*mx + my*my + mz*mz);
-  float delta = fabs(mag - 9.8f);  // remove gravity
-  return (delta > ACCEL_THRESHOLD);
-}
-
 void setup() {
   Serial.begin(9600);
-  Wire.begin();  // initialize I²C bus
+  Wire.begin();
 
-  // order is: CS, SCK, MOSI (SDA), MISO (DO)
-  if (! lsm6ds.begin_SPI(A3, A0, A1, A2) ) {
-    Serial.println("ERROR: LSM6DS bit-bang SPI failed!");
-    while (1) delay(10);
-  }
-
-  // choose ranges (optional)
-  lsm6ds.setAccelRange(LSM6DS_ACCEL_RANGE_2_G);
-  lsm6ds.setGyroRange(LSM6DS_GYRO_RANGE_250_DPS);
-  Serial.println("LSM6DS302 initialized.");
-
-  // Load high score
-  EEPROM.get(EEPROM_ADDR_HIGH, highScore);
-  Serial.print("Loaded High Score: ");
-  Serial.println(highScore);
-
-  // Initialize pins
-  pinMode(SWITCH_PIN,     INPUT_PULLUP);
-  pinMode(MODE_BTN_PIN,   INPUT_PULLUP);
-  pinMode(OLED_POWER_PIN, OUTPUT);
-  pinMode(BUZZER_PIN,     OUTPUT);
-  pinMode(SHEATH_PIN,     INPUT_PULLUP);
-  digitalWrite(OLED_POWER_PIN, LOW);
-  digitalWrite(BUZZER_PIN,   LOW);
-  delay(50);
-
-  // Initialize OLED
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     Serial.println(F("OLED init failed"));
     while (1);
   }
   display.clearDisplay();
   display.display();
+  delay(100);
 
-  // Encoder & RGB
+  if (!IMU.begin()) {
+    Serial.println("Failed to initialize IMU!");
+    while (1);
+  }
+
+  EEPROM.get(EEPROM_ADDR_HIGH, highScore);
+
+  pinMode(SWITCH_PIN,     INPUT_PULLUP);
+  pinMode(MODE_BTN_PIN,   INPUT_PULLUP);
+  pinMode(BUZZER_PIN,     OUTPUT);
+  pinMode(SHEATH_PIN,     INPUT_PULLUP);
+  digitalWrite(BUZZER_PIN,   LOW);
+
   pinMode(ENC_CLK,   INPUT);
   pinMode(ENC_DT,    INPUT);
   lastEncCLK = digitalRead(ENC_CLK);
+
   pinMode(RED_PIN,   OUTPUT);
   pinMode(GREEN_PIN, OUTPUT);
   pinMode(BLUE_PIN,  OUTPUT);
   setRGB(0,0,0);
 
-  // use a floating analog pin for random seed
-  randomSeed(analogRead(A0));
+  randomSeed(analogRead(A5));
+
+  // Only print threshold once at startup
+  Serial.print("Swing threshold: ");
+  Serial.println(SWING_DELTA_THRESHOLD, 2);
 }
 
 void loop() {
   if (checkPowerToggle()) {
     oledOn = !oledOn;
+    Serial.println(oledOn ? "OLED ON" : "OLED OFF");
     if (oledOn)      powerUpAndSelectMode();
     else             powerDownOLED();
   }
 }
 
+// Menu/intro
 void powerUpAndSelectMode() {
-  digitalWrite(OLED_POWER_PIN, HIGH);
   delay(10);
 
-  // Title screen (interruptible)
   display.clearDisplay();
   display.setTextSize(2);
   display.setTextColor(WHITE);
   display.setCursor(0,0);
   display.println("Bop-It!");
+  display.setTextSize(1);
+  display.setCursor(0,32);
   display.display();
-  {
-    unsigned long t0 = millis();
-    while (millis() - t0 < 2000) {
-      if (checkPowerToggle()) {
-        oledOn = false;
-        powerDownOLED();
-        return;
-      }
+
+  unsigned long t0 = millis();
+  while (millis() - t0 < 2000) {
+    if (checkPowerToggle()) {
+      oledOn = false;
+      powerDownOLED();
+      return;
     }
   }
 
-  // Mode select: cycle modes, auto‐confirm after 3s
   modeCount = 1;
   showMenu();
   lastModeState = digitalRead(MODE_BTN_PIN);
@@ -219,7 +179,6 @@ void powerUpAndSelectMode() {
     lastModeState = m;
   }
 
-  // Confirm screen
   display.clearDisplay();
   display.setTextSize(2);
   display.setCursor(0,16);
@@ -227,27 +186,56 @@ void powerUpAndSelectMode() {
   else if (modeCount == 2) display.println("Medium Mode");
   else                     display.println("Hard Mode");
   display.display();
-  {
-    unsigned long t0 = millis();
-    while (millis() - t0 < 2000) {
-      if (checkPowerToggle()) {
-        oledOn = false;
-        powerDownOLED();
-        return;
-      }
+
+  t0 = millis();
+  while (millis() - t0 < 2000) {
+    if (checkPowerToggle()) {
+      oledOn = false;
+      powerDownOLED();
+      return;
     }
   }
 
   runGame();
 }
 
+// Only prints when required for the "Swing It!" prompt
+bool isSwingDetected(bool showDebug) {
+  float x, y, z;
+  if (IMU.accelerationAvailable()) {
+    IMU.readAcceleration(x, y, z);
+
+    float deltaX = abs(x - lastX);
+    float deltaY = abs(y - lastY);
+    float deltaZ = abs(z - lastZ);
+
+    lastX = x;
+    lastY = y;
+    lastZ = z;
+
+    bool swung = (deltaX > SWING_DELTA_THRESHOLD ||
+                  deltaY > SWING_DELTA_THRESHOLD ||
+                  deltaZ > SWING_DELTA_THRESHOLD);
+
+    if (showDebug) {
+      // Serial.print("[IMU] dX: "); Serial.print(deltaX, 2);
+      // Serial.print(" dY: "); Serial.print(deltaY, 2);
+      // Serial.print(" dZ: "); Serial.print(deltaZ, 2);
+      // Serial.print(" | Swung: ");
+      Serial.println(swung ? "YES" : "NO");
+    }
+
+    return swung;
+  }
+  return false;
+}
+
 void runGame() {
   unsigned long interval = (modeCount==1 ? 5000 :
                             modeCount==2 ? 4000 : 3000);
   unsigned long lastCueTime = millis();
-  int score = 98;
+  int score = 0;
 
-  // initial score display
   display.clearDisplay();
   display.setTextSize(1);
   display.setCursor(0,0);
@@ -266,7 +254,7 @@ void runGame() {
                          cmd==2 ? "Sheath It!" :
                                   "Boost It!");
 
-      // show prompt + live score
+      // Show prompt and score (always clear first!)
       setRGB(0,0,0);
       display.clearDisplay();
       display.setTextSize(1);
@@ -289,25 +277,24 @@ void runGame() {
       }
       noTone(BUZZER_PIN);
 
-      // set up edge flags + baselines
+      // Input phase
       bool swung    = false;
       bool sheathed = false;
       bool boosted  = false;
       long  baseEnc = encPosition;
       bool  lastSheathState = (digitalRead(SHEATH_PIN)   == LOW);
-      bool  lastSwingState  = detectSwing(); // (digitalRead(SWING_PIN)    > SWING_THRESHOLD);
+      bool  lastSwingState  = false;
 
       unsigned long start = millis();
       bool correct = false;
 
-      // wait for input or timeout
       while (millis() - start < interval) {
         updateEncoder();
         if (checkPowerToggle()) { powerDownOLED(); return; }
 
         bool curSheath = (digitalRead(SHEATH_PIN) == LOW);
-        bool curSwing  = detectSwing();
-        long  curEnc   = encPosition;
+        bool curSwing  = (cmd == 1) ? isSwingDetected(true) : isSwingDetected(false);
+        long curEnc   = encPosition;
 
         // sheath edge
         if (!sheathed && !lastSheathState && curSheath) {
@@ -339,7 +326,6 @@ void runGame() {
         if (!boosted && curEnc != baseEnc) {
           boosted = true;
           if (cmd == 3) {
-            // ← your color-cycling on correct Boost
             int idx = (score / 10) % NUM_COLORS;
             auto &c = colorTable[idx];
             setRGB(c[0], c[1], c[2]);
@@ -356,6 +342,8 @@ void runGame() {
 
         lastSheathState = curSheath;
         lastSwingState  = curSwing;
+
+        delay(10); // Keeps loop responsive, avoids resource overload
       }
 
       // timeout with no correct input
@@ -366,10 +354,8 @@ void runGame() {
         return;
       }
 
-      // correct → increment + update display
       score++;
       if(score>=99){
-        // reached 99+ → end game
         setRGB(0,0,0);
         tone(BUZZER_PIN,400,200);
         showGameOver(score);
@@ -423,18 +409,15 @@ void showGameOver(int finalScore) {
   display.println(highScore);
 
   display.display();
-  Serial.print("Final Score: "); Serial.println(finalScore);
-  Serial.print("High Score: ");  Serial.println(highScore);
+  // Serial.print("Final Score: "); Serial.println(finalScore);
+  // Serial.print("High Score: ");  Serial.println(highScore);
 
-  // linger
-  {
-    unsigned long t0 = millis();
-    while (millis() - t0 < 4000) {
-      if (checkPowerToggle()) {
-        oledOn = false;
-        powerDownOLED();
-        return;
-      }
+  unsigned long t0 = millis();
+  while (millis() - t0 < 4000) {
+    if (checkPowerToggle()) {
+      oledOn = false;
+      powerDownOLED();
+      return;
     }
   }
 
@@ -480,5 +463,4 @@ void showGameOverMenu(uint8_t opt) {
 void powerDownOLED() {
   display.clearDisplay();
   display.display();
-  digitalWrite(OLED_POWER_PIN, LOW);
 }
