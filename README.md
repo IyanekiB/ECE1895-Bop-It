@@ -4,7 +4,7 @@
 A handheld, cyberpunk-style reaction game built into a 3D-printed katana. The hilt houses an ATmega328P, OLED menu, speaker and controls; the blade contains NeoPixel LEDs and an accelerometer. Players choose Easy/Medium/Hard, then must respond to three voiced prompts—`Swing It!`, `Sheath It!` and `Power Boost!`—within a shrinking timer. Correct swings, sheath-backs and button/encoder presses score points; every 10 successes the blade’s color advances and the game speeds up. Reach 99 points for a celebratory LED flourish, or on failure see **GAME OVER** plus your current and all-time best score (stored in EEPROM).
 
 ---
-## 👥 Team Members
+## Team Members
 - **Modeling:** Nicholas Cessna  
 - **Integration:** Nurfadil Rafiuddin  
 - **Circuitry:** Vish Thirukallam  
@@ -12,7 +12,7 @@ A handheld, cyberpunk-style reaction game built into a 3D-printed katana. The hi
 
 ---
 
-## 🔹 Key Features
+## Key Features
 - **Mode Select** (Easy / Medium / Hard) via OLED menu  
 - **Three Unique Actions**  
   - **Swing It!** (blade-tip accelerometer)  
@@ -30,7 +30,7 @@ A handheld, cyberpunk-style reaction game built into a 3D-printed katana. The hi
 
 ---
 
-## 📦 Hardware
+## Hardware
 - **MCU:** ATmega328P (3.3 V)  
 - **Power:** 18650 Li-Ion + slide switch + 3.3 V regulator + TP4056 charger  
 - **Display:** OLED or RGB backlit 16×2 LCD  
@@ -44,7 +44,7 @@ A handheld, cyberpunk-style reaction game built into a 3D-printed katana. The hi
 
 ---
 
-## ⚙️ Software
+## Software
 - **Platform:** AVR/GCC on ATmega328P  
 - **Workflow:**  
   1. Power on & select mode  
