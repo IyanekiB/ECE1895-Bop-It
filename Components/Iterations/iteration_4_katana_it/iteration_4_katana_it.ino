@@ -1,24 +1,29 @@
 #include <Wire.h>
-#include <Adafruit_GFX.h>              // Graphics library for OLED
-#include <Adafruit_SSD1306.h>          // OLED driver
-#include <Arduino_LSM6DSOX.h>          // IMU (accelerometer/gyro)
-#include <EEPROM.h>                    // EEPROM for persistent storage
-#include <Adafruit_NeoPixel.h>         // NeoPixel library for LED strip
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Arduino_LSM6DSOX.h>
+#include <EEPROM.h>
+#include <Adafruit_NeoPixel.h>
+#include <SD.h>
+#include <TMRpcm.h>
 
-// ------------------- Pin and Device Config -------------------
+// Pin and Device Config 
 #define OLED_WIDTH       128
 #define OLED_HEIGHT      64
 #define OLED_RESET       -1            // OLED reset (unused)
 #define SWITCH_PIN        2            // Power switch pin
 #define MODE_BTN_PIN      3            // Mode select button pin
-#define BUZZER_PIN        9            // Buzzer pin
 #define SHEATH_PIN        6            // Sheath action button pin
 
 #define NEOPIXEL_PIN     7             // Data pin for NeoPixel LED strip
 #define NUM_LEDS         30            // Number of LEDs in the strip
 
+#define SD_CS_PIN        4             // Chip select for SD card
+#define AUDIO_PIN        9             // TMRpcm ONLY WORKS ON PIN 9 (Uno/Nano)
+
 Adafruit_NeoPixel strip(NUM_LEDS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
+TMRpcm audio;
 
 // Rotary encoder pins and state
 const uint8_t ENC_CLK = 5, ENC_DT = 8;
@@ -38,16 +43,12 @@ int lastModeState = HIGH;              // For button debouncing
 // Previous IMU readings (used for swing detection)
 float lastX = 0, lastY = 0, lastZ = 0;
 
-// LED Helpers
-
-// Turn off all NeoPixels
+// NeoPixel LED helpers
 void stripOff() {
   for (uint8_t i = 0; i < NUM_LEDS; i++)
     strip.setPixelColor(i, 0);
   strip.show();
 }
-
-// Flash the whole strip red for error/game over
 void flashRed(uint16_t ms = 350) {
   for (uint8_t i = 0; i < NUM_LEDS; i++)
     strip.setPixelColor(i, strip.Color(255, 0, 0));
@@ -55,8 +56,6 @@ void flashRed(uint16_t ms = 350) {
   delay(ms);
   stripOff();
 }
-
-// Green wave animation for correct swing/sheath input
 void movingGreenWave(uint16_t duration_ms = 750) {
   uint8_t frames = 24;
   uint8_t frameDelay = duration_ms / frames;
@@ -71,8 +70,6 @@ void movingGreenWave(uint16_t duration_ms = 750) {
   }
   stripOff();
 }
-
-// Light up a growing segment of the strip in a rainbow gradient
 void showRainbowGrowing(int count) {
   count = constrain(count, 0, NUM_LEDS);
   for (uint8_t i = 0; i < NUM_LEDS; i++) {
@@ -86,9 +83,7 @@ void showRainbowGrowing(int count) {
   strip.show();
 }
 
-// Input and Game Utils
-
-// Debounced check for power toggle switch
+// Input and game utils
 bool checkPowerToggle() {
   static int last = HIGH;
   int cur = digitalRead(SWITCH_PIN);
@@ -103,8 +98,6 @@ bool checkPowerToggle() {
   last = cur;
   return false;
 }
-
-// Update the encoder position value
 void updateEncoder() {
   int clk = digitalRead(ENC_CLK);
   if (clk != lastEncCLK) {
@@ -114,11 +107,31 @@ void updateEncoder() {
   lastEncCLK = clk;
 }
 
-// Main Setup/Loop
+// AUDIO PLAYBACK HELPERS
+void playPromptAudio(uint8_t cmd) {
+  // cmd: 1=Swing, 2=Sheath, 3=Boost
+  switch(cmd) {
+    case 1: audio.play("SWINGIT.WAV"); break;
+    case 2: audio.play("SHEATHIT.WAV"); break;
+    case 3: audio.play("BOOSTIT.WAV"); break;
+    default: break;
+  }
+}
+void playErrorAudio() {
+  // Play a simple beep (or an error file if you like)
+  audio.speakerPin = AUDIO_PIN;
+  audio.setVolume(5);
+  audio.play("ERROR.WAV"); // Optional: create a short "fail" audio file
+}
 
+// MAIN SETUP/LOOP
 void setup() {
   Wire.begin();
-  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  // display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("OLED init failed"));
+    while (1);
+  }
   display.clearDisplay(); display.display();
 
   IMU.begin();
@@ -126,10 +139,7 @@ void setup() {
 
   pinMode(SWITCH_PIN, INPUT_PULLUP);
   pinMode(MODE_BTN_PIN, INPUT_PULLUP);
-  pinMode(BUZZER_PIN, OUTPUT);
   pinMode(SHEATH_PIN, INPUT_PULLUP);
-  digitalWrite(BUZZER_PIN, LOW);
-
   pinMode(ENC_CLK, INPUT);
   pinMode(ENC_DT, INPUT);
   lastEncCLK = digitalRead(ENC_CLK);
@@ -139,10 +149,22 @@ void setup() {
   stripOff();
 
   randomSeed(analogRead(A5));
+
+  // SD card and audio setup
+  if (!SD.begin(SD_CS_PIN)) {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    display.print("SD Fail");
+    display.display();
+    delay(2000);
+    while(1); // Halt
+  }
+  audio.speakerPin = AUDIO_PIN;
+  audio.setVolume(5);
 }
 
 void loop() {
-  // Wait for power toggle switch to turn game on/off
   if (checkPowerToggle()) {
     oledOn = !oledOn;
     if (oledOn)      powerUpAndSelectMode();
@@ -150,9 +172,7 @@ void loop() {
   }
 }
 
-// UI & Menu Logic
-
-// Show mode selection and get mode from user
+// Menu and Game Logic
 void powerUpAndSelectMode() {
   delay(7);
 
@@ -165,7 +185,6 @@ void powerUpAndSelectMode() {
   display.setCursor(0,32);
   display.display();
 
-  // Show splash for 1.6 seconds
   unsigned long t0 = millis();
   while (millis() - t0 < 1600) {
     if (checkPowerToggle()) { oledOn = false; powerDownOLED(); return; }
@@ -176,15 +195,14 @@ void powerUpAndSelectMode() {
   lastModeState = digitalRead(MODE_BTN_PIN);
   unsigned long lastPress = millis();
 
-  // Wait for up to 2.3s for mode change button
   while (millis() - lastPress < 2300) {
     if (checkPowerToggle()) { oledOn = false; powerDownOLED(); return; }
     int m = digitalRead(MODE_BTN_PIN);
     if (m != lastModeState) {
-      delay(28); // Debounce
+      delay(28);
       m = digitalRead(MODE_BTN_PIN);
       if (m == LOW) {
-        modeCount = (modeCount % 3) + 1; // Cycle through modes
+        modeCount = (modeCount % 3) + 1;
         showMenu();
         lastPress = millis();
       }
@@ -192,7 +210,6 @@ void powerUpAndSelectMode() {
     lastModeState = m;
   }
 
-  // Show chosen mode for 1.3s
   display.clearDisplay();
   display.setTextSize(2);
   display.setCursor(0,16);
@@ -209,22 +226,18 @@ void powerUpAndSelectMode() {
   runGame();
 }
 
-// Detects a swing movement using IMU readings
 bool isSwingDetected() {
   float x, y, z;
   if (IMU.accelerationAvailable()) {
     IMU.readAcceleration(x, y, z);
     float dx = abs(x - lastX), dy = abs(y - lastY), dz = abs(z - lastZ);
     lastX = x; lastY = y; lastZ = z;
-    return (dx > SWING_DELTA_THRESHOLD || dy > SWING_DELTA_THRESHOLD || dz > SWING_DELTA_THRESHOLD);
+    return (dx > 1.5 || dy > 1.5 || dz > 1.5);
   }
   return false;
 }
 
-// GAME LOGIC
-
 void runGame() {
-  // Set timing interval based on difficulty
   unsigned long interval = (modeCount==1 ? 4700 : modeCount==2 ? 3800 : 2800);
   unsigned long lastCueTime = millis();
   int score = 0;
@@ -256,20 +269,13 @@ void runGame() {
       display.println(txt);
       display.display();
 
-      // Beep sequence for cue
+      // Play audio prompt for cue (replace buzzer)
       stripOff();
-      for (uint8_t i = 0; i < cmd; i++) {
-        if (checkPowerToggle()) { powerDownOLED(); return; }
-        tone(BUZZER_PIN, 2000, 175);
-        unsigned long t0 = millis();
-        while (millis() - t0 < 175) if (checkPowerToggle()) { powerDownOLED(); return; }
-        unsigned long t1 = millis();
-        while (millis() - t1 < 180) if (checkPowerToggle()) { powerDownOLED(); return; }
-      }
-      noTone(BUZZER_PIN);
+      playPromptAudio(cmd); 
+      delay(700); // Give time for short prompt playback
 
       long baseEnc = encPosition;
-      long maxDelta = 0;    // Store furthest clockwise movement
+      long maxDelta = 0;
       bool correct = false;
       bool lastSheathState = (digitalRead(SHEATH_PIN) == LOW);
       bool lastSwingState = false;
@@ -283,102 +289,86 @@ void runGame() {
           updateEncoder();
           if (checkPowerToggle()) { powerDownOLED(); return; }
           long curEnc = encPosition;
-          // Count only maximum positive movement
-          int delta = abs(curEnc - baseEnc);     // Only clockwise increases
+          int delta = abs(curEnc - baseEnc);
           if (delta > maxDelta) maxDelta = delta;
-
-          int num_lit = maxDelta / 2;       // Every 2 ticks lights 1 LED
+          int num_lit = maxDelta / 2; 
           num_lit = constrain(num_lit, 0, NUM_LEDS);
 
-          // Update LEDs only if lit count changes
           if (num_lit != prevLit) {
             showRainbowGrowing(num_lit);
             prevLit = num_lit;
           }
-
           if (num_lit > 0) encoderMoved = true;
 
           delay(12);
         }
         if (!encoderMoved) { 
           flashRed(); 
-          tone(BUZZER_PIN, 400, 200); 
+          playErrorAudio(); 
           showGameOver(score); 
           return; 
         }
         else correct = true;
         stripOff();
       } 
-      // SWING/SHEATH input (motion/buttons)
-      else if (cmd == 1) { // Swing
-          long swingBaseEnc = encPosition; // Store encoder at start
-          bool curSwing, lastSwingState = false;
-          bool movedEncoder = false;
-          while (millis() - start < interval) {
-            updateEncoder();
-            if (checkPowerToggle()) { powerDownOLED(); return; }
-
-            // Penalize any encoder movement!
-            if (encPosition != swingBaseEnc) {
-              flashRed(); tone(BUZZER_PIN, 400, 200); showGameOver(score); return;
-            }
-
-            curSwing = isSwingDetected();
-            if (!lastSwingState && curSwing) {
-              movingGreenWave();
-              correct = true;
-              break;
-            }
-            lastSwingState = curSwing;
-            if (digitalRead(SHEATH_PIN) == LOW) {
-              flashRed(); tone(BUZZER_PIN, 400, 200); showGameOver(score); return;
-            }
-            delay(12);
+      // SWING input (motion/buttons)
+      else if (cmd == 1) {
+        long swingBaseEnc = encPosition;
+        bool curSwing, lastSwingState = false;
+        bool movedEncoder = false;
+        while (millis() - start < interval) {
+          updateEncoder();
+          if (checkPowerToggle()) { powerDownOLED(); return; }
+          if (encPosition != swingBaseEnc) {
+            flashRed(); playErrorAudio(); showGameOver(score); return;
           }
+          curSwing = isSwingDetected();
+          if (!lastSwingState && curSwing) {
+            movingGreenWave();
+            correct = true;
+            break;
+          }
+          lastSwingState = curSwing;
+          if (digitalRead(SHEATH_PIN) == LOW) {
+            flashRed(); playErrorAudio(); showGameOver(score); return;
+          }
+          delay(12);
+        }
       }
-      else if (cmd == 2) { // Sheath
-          long sheathBaseEnc = encPosition; // Store encoder at start
-          bool curSheath, lastSheathState = (digitalRead(SHEATH_PIN) == LOW);
-          while (millis() - start < interval) {
-            updateEncoder();
-            if (checkPowerToggle()) { powerDownOLED(); return; }
-
-            // Penalize any encoder movement!
-            if (encPosition != sheathBaseEnc) {
-              flashRed(); tone(BUZZER_PIN, 400, 200); showGameOver(score); return;
-            }
-
-            curSheath = (digitalRead(SHEATH_PIN) == LOW);
-            if (!lastSheathState && curSheath) {
-              movingGreenWave();
-              correct = true;
-              break;
-            }
-            lastSheathState = curSheath;
-            if (isSwingDetected()) {
-              flashRed(); tone(BUZZER_PIN, 400, 200); showGameOver(score); return;
-            }
-            delay(12);
+      // SHEATH input (motion/buttons)
+      else if (cmd == 2) {
+        long sheathBaseEnc = encPosition;
+        bool curSheath, lastSheathState = (digitalRead(SHEATH_PIN) == LOW);
+        while (millis() - start < interval) {
+          updateEncoder();
+          if (checkPowerToggle()) { powerDownOLED(); return; }
+          if (encPosition != sheathBaseEnc) {
+            flashRed(); playErrorAudio(); showGameOver(score); return;
           }
+          curSheath = (digitalRead(SHEATH_PIN) == LOW);
+          if (!lastSheathState && curSheath) {
+            movingGreenWave();
+            correct = true;
+            break;
+          }
+          lastSheathState = curSheath;
+          if (isSwingDetected()) {
+            flashRed(); playErrorAudio(); showGameOver(score); return;
+          }
+          delay(12);
+        }
       }
 
-      // Timeout or incorrect input: fail
       if (!correct) { 
-        flashRed(); 
-        tone(BUZZER_PIN, 400, 200); 
-        showGameOver(score); 
-        return; 
+        flashRed(); playErrorAudio(); showGameOver(score); return; 
       }
-
-      // Success: update score, animate, and continue
       score++;
       if(score>=99){
         stripOff();
-        tone(BUZZER_PIN,400,200);
+        playErrorAudio();
         showGameOver(score);
         return;
       }
-
       display.clearDisplay();
       display.setTextSize(1);
       display.setCursor(0,0);
@@ -392,8 +382,6 @@ void runGame() {
 }
 
 // UI helpers
-
-// Show mode selection menu
 void showMenu() {
   display.clearDisplay();
   display.setTextSize(1);
@@ -408,8 +396,6 @@ void showMenu() {
   }
   display.display();
 }
-
-// Show game over screen and update high score
 void showGameOver(int finalScore) {
   flashRed();
 
@@ -422,7 +408,6 @@ void showGameOver(int finalScore) {
   display.print(F("Score: "));
   display.println(finalScore);
 
-  // Update high score if beaten
   if (finalScore > highScore) {
     highScore = finalScore;
     EEPROM.put(EEPROM_ADDR_HIGH, highScore);
@@ -439,8 +424,6 @@ void showGameOver(int finalScore) {
   oledOn = false;
   powerDownOLED();
 }
-
-// Power down sequence: clear LEDs and OLED
 void powerDownOLED() {
   stripOff();
   display.clearDisplay();
