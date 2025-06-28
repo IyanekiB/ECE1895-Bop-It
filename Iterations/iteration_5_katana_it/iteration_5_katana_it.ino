@@ -199,6 +199,8 @@ void setup() {
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   display.clearDisplay(); display.display();
 
+  delay(100);
+
   IMU.begin();
   EEPROM.get(EEPROM_ADDR_HIGH, highScore);
 
