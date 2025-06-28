@@ -6,20 +6,6 @@
 #include <Adafruit_NeoPixel.h>
 
 // ----- Pinout -----
-// 2  - Start (Power) Button (INPUT_PULLUP)
-// 3  - Mode Select Button (INPUT_PULLUP)
-// 5  - Encoder CLK (INPUT)
-// 6  - Sheath Button (INPUT_PULLUP)
-// 7  - NeoPixel Data (OUTPUT)
-// 8  - Encoder DT (INPUT)
-// 10 - FX: Boost It (OUTPUT, to FX board T0)
-// 11 - FX: Sheath It (OUTPUT, to FX board T1)
-// 12 - FX: Swing It (OUTPUT, to FX board T2)
-// 13 - FX: Game On (OUTPUT, to FX board T3)
-// 14 - FX: Game Over (OUTPUT, to FX board T4)
-// GND - Shared Ground with FX board
-// FX board's audio out to powered speaker/amplifier
-
 #define OLED_WIDTH       128
 #define OLED_HEIGHT      64
 #define OLED_RESET       -1
@@ -34,11 +20,11 @@
 #define ENC_A             5
 #define ENC_B             8
 
-#define FX_BOOST_PIN     9  // T0 - Boost It
-#define FX_SHEATH_PIN    10  // T1 - Sheath It
-#define FX_SWING_PIN     11  // T2 - Swing It
-#define FX_GAME_ON       12  // T3 - Game On
-#define FX_GAME_OVER     13  // T4 - Game Over
+#define FX_BOOST_PIN      9   // T0 - Boost It
+#define FX_SHEATH_PIN     10  // T1 - Sheath It
+#define FX_SWING_PIN      11  // T2 - Swing It
+#define FX_GAME_ON        12  // T3 - Game On
+#define FX_GAME_OVER      13  // T4 - Game Over
 
 Adafruit_NeoPixel strip(NUM_LEDS, NEOPIXEL_PIN, NEO_GRBW + NEO_KHZ800);
 Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
@@ -56,13 +42,17 @@ uint16_t boostHue = 0;
 
 float lastX = 0, lastY = 0, lastZ = 0;
 
-// FX Board Sound Trigger Helper
-void playSound(uint8_t fxPin, uint16_t holdMs=40, uint16_t pauseMs=180) {
-  digitalWrite(fxPin, LOW);  // Trigger sound
-  delay(holdMs);
-  digitalWrite(fxPin, HIGH); // Release trigger
-  delay(pauseMs);
+// ---- Adafruit FX Soundboard Trigger Helper (ACTIVE LOW) ----
+void playSound(uint8_t fxPin) {
+  pinMode(fxPin, OUTPUT);      // (Redundant but safe)
+  digitalWrite(fxPin, HIGH);   // Ensure idle
+  delay(20);
+  digitalWrite(fxPin, LOW);    // Pulse LOW
+  delay(250);                  // Hold LOW at least 200-300ms for reliability
+  digitalWrite(fxPin, HIGH);   // Return HIGH
+  delay(100);                  // Wait before next trigger
 }
+
 
 // NeoPixel helpers
 void stripOff() {
@@ -70,7 +60,6 @@ void stripOff() {
     strip.setPixelColor(i, 0,0,0,0);
   strip.show();
 }
-
 void flashRed(uint16_t ms = 350) {
   for (uint8_t i = 0; i < NUM_LEDS; i++)
     strip.setPixelColor(i, 255,0,0,0);
@@ -78,7 +67,6 @@ void flashRed(uint16_t ms = 350) {
   delay(ms);
   stripOff();
 }
-
 void movingGreenWave(uint16_t duration_ms = 750) {
   uint8_t frames = 24;
   uint8_t frameDelay = duration_ms / frames;
@@ -93,10 +81,9 @@ void movingGreenWave(uint16_t duration_ms = 750) {
   }
   stripOff();
 }
-
 void showGradientBlade(int count, uint16_t baseHue) {
   count = constrain(count, 0, NUM_LEDS);
-  uint16_t delta = 4000; // Spread hues for blade
+  uint16_t delta = 4000;
   for (uint8_t i = 0; i < NUM_LEDS; i++) {
     if (i < count) {
       uint16_t thisHue = baseHue + ((uint32_t)i * delta / (count>1?count-1:1));
@@ -147,7 +134,6 @@ void showSplash() {
   display.println(F("Katana-It!"));
   display.display();
 }
-
 void showMenu(uint8_t highlight) {
   display.clearDisplay();
   display.setTextSize(1);
@@ -162,7 +148,6 @@ void showMenu(uint8_t highlight) {
   }
   display.display();
 }
-
 void showModeConfirmation(uint8_t mode) {
   display.clearDisplay();
   display.setTextSize(2);
@@ -174,14 +159,12 @@ void showModeConfirmation(uint8_t mode) {
   delay(1300);
   display.clearDisplay(); display.display();
 }
-
 void waitForStartButton() {
   display.clearDisplay();
   display.display();
   while (digitalRead(SWITCH_PIN) == HIGH) delay(8);
   while (digitalRead(SWITCH_PIN) == LOW) delay(8);
 }
-
 void modeSelectMenu() {
   modeCount = 1;
   showMenu(modeCount);
@@ -229,6 +212,7 @@ void setup() {
   strip.setBrightness(80);
   stripOff();
 
+  // Set all FX trigger pins to OUTPUT and HIGH (idle for ACTIVE LOW)
   pinMode(FX_BOOST_PIN, OUTPUT);   digitalWrite(FX_BOOST_PIN, HIGH);
   pinMode(FX_SHEATH_PIN, OUTPUT);  digitalWrite(FX_SHEATH_PIN, HIGH);
   pinMode(FX_SWING_PIN, OUTPUT);   digitalWrite(FX_SWING_PIN, HIGH);
@@ -243,7 +227,7 @@ void loop() {
 
   delay(100);
 
-  playSound(FX_GAME_ON, 100, 180); // Play "Game On" sound (T3)
+  playSound(FX_GAME_ON); // Play "Game On" sound (T3, active LOW)
 
   showSplash();
   unsigned long splashStart = millis();
@@ -310,12 +294,10 @@ void runGame() {
       display.display();
 
       stripOff();
-      // for (uint8_t i = 0; i < cmd; i++) {
-      // if (checkPowerToggle()) { powerDownOLED(); return; }
-      if (cmd == 1) playSound(FX_SWING_PIN, 50, 180);
-      else if (cmd == 2) playSound(FX_SHEATH_PIN, 50, 180);
-      else if (cmd == 3) playSound(FX_BOOST_PIN, 50, 180);
-      // }
+      // ---- Trigger the correct sound immediately (active LOW pulse) ----
+      if (cmd == 1) playSound(FX_SWING_PIN);
+      else if (cmd == 2) playSound(FX_SHEATH_PIN);
+      else if (cmd == 3) playSound(FX_BOOST_PIN);
 
       long baseEnc = encPosition;
       long maxDelta = 0;
@@ -343,14 +325,14 @@ void runGame() {
           if (num_lit > 0) encoderMoved = true;
 
           if (digitalRead(SHEATH_PIN) == LOW) {
-            flashRed(); playSound(FX_GAME_OVER, 80, 500); showGameOver(score); return;
+            flashRed(); playSound(FX_GAME_OVER); showGameOver(score); return;
           }
           if (isSwingDetected()) {
-            flashRed(); playSound(FX_GAME_OVER, 80, 500); showGameOver(score); return;
+            flashRed(); playSound(FX_GAME_OVER); showGameOver(score); return;
           }
           delay(12);
         }
-        if (!encoderMoved) { flashRed(); playSound(FX_GAME_OVER, 80, 500); showGameOver(score); return; }
+        if (!encoderMoved) { flashRed(); playSound(FX_GAME_OVER); showGameOver(score); return; }
         else correct = true;
         stripOff();
       }
@@ -362,7 +344,7 @@ void runGame() {
           if (checkPowerToggle()) { powerDownOLED(); return; }
           int encDelta = abs(encPosition - swingBaseEnc);
           if (encDelta >= 2) {
-            flashRed(); playSound(FX_GAME_OVER, 80, 500); showGameOver(score); return;
+            flashRed(); playSound(FX_GAME_OVER); showGameOver(score); return;
           }
           curSwing = isSwingDetected();
           if (!lastSwingState && curSwing) {
@@ -371,7 +353,7 @@ void runGame() {
           }
           lastSwingState = curSwing;
           if (digitalRead(SHEATH_PIN) == LOW) {
-            flashRed(); playSound(FX_GAME_OVER, 80, 500); showGameOver(score); return;
+            flashRed(); playSound(FX_GAME_OVER); showGameOver(score); return;
           }
           delay(12);
         }
@@ -384,7 +366,7 @@ void runGame() {
           if (checkPowerToggle()) { powerDownOLED(); return; }
           int encDelta = abs(encPosition - sheathBaseEnc);
           if (encDelta >= 2) {
-            flashRed(); playSound(FX_GAME_OVER, 80, 500); showGameOver(score); return;
+            flashRed(); playSound(FX_GAME_OVER); showGameOver(score); return;
           }
           curSheath = (digitalRead(SHEATH_PIN) == LOW);
           if (!lastSheathState && curSheath) {
@@ -393,18 +375,18 @@ void runGame() {
           }
           lastSheathState = curSheath;
           if (isSwingDetected()) {
-            flashRed(); playSound(FX_GAME_OVER, 80, 500); showGameOver(score); return;
+            flashRed(); playSound(FX_GAME_OVER); showGameOver(score); return;
           }
           delay(12);
         }
       }
 
-      if (!correct) { flashRed(); playSound(FX_GAME_OVER, 80, 500); showGameOver(score); return; }
+      if (!correct) { flashRed(); playSound(FX_GAME_OVER); showGameOver(score); return; }
 
       score++;
       if(score>=99){
         stripOff();
-        playSound(FX_GAME_OVER, 120, 250);
+        playSound(FX_GAME_OVER);
         showGameOver(score);
         return;
       }
@@ -424,7 +406,7 @@ void runGame() {
 // Game Over, Power Down
 void showGameOver(int finalScore) {
   flashRed();
-  playSound(FX_GAME_OVER, 120, 700);
+  playSound(FX_GAME_OVER);
   display.clearDisplay();
   display.setTextSize(2);
   display.setCursor(0,0);
