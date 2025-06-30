@@ -5,7 +5,7 @@
 #include <EEPROM.h>
 #include <Adafruit_NeoPixel.h>
 
-// ----- Pinout -----
+// Pinout
 #define OLED_WIDTH       128
 #define OLED_HEIGHT      64
 #define OLED_RESET       -1
@@ -17,8 +17,8 @@
 #define NEOPIXEL_PIN      7
 #define NUM_LEDS         60
 
-#define ENC_A             5
-#define ENC_B             8
+#define ENC_A             5   // Terminal A (right-most pin when encoder is facing you)
+#define ENC_B             8   // Terminal B (left-most pin when encoder is facing you)
 
 #define FX_BOOST_PIN      9   // T0 - Boost It
 #define FX_SHEATH_PIN     10  // T1 - Sheath It
@@ -42,13 +42,13 @@ uint16_t boostHue = 0;
 
 float lastX = 0, lastY = 0, lastZ = 0;
 
-// ---- Adafruit FX Soundboard Trigger Helper (ACTIVE LOW) ----
+// Adafruit FX Soundboard Trigger Helper (ACTIVE LOW)
 void playSound(uint8_t fxPin) {
-  pinMode(fxPin, OUTPUT);      // (Redundant but safe)
+  pinMode(fxPin, OUTPUT);     
   digitalWrite(fxPin, HIGH);   // Ensure idle
   delay(20);
   digitalWrite(fxPin, LOW);    // Pulse LOW
-  delay(250);                  // Hold LOW at least 200-300ms for reliability
+  delay(250);                  // Hold LOW at least 200-300ms
   digitalWrite(fxPin, HIGH);   // Return HIGH
   delay(100);                  // Wait before next trigger
 }
@@ -67,20 +67,61 @@ void flashRed(uint16_t ms = 350) {
   delay(ms);
   stripOff();
 }
-void movingGreenWave(uint16_t duration_ms = 750) {
-  uint8_t frames = 24;
-  uint8_t frameDelay = duration_ms / frames;
-  for (uint8_t f = 0; f < frames; f++) {
-    for (uint8_t i = 0; i < NUM_LEDS; i++) {
-      int d = abs((int)i - (f * NUM_LEDS / frames));
-      uint8_t val = (d < 4) ? 200 - 45 * d : 0;
-      strip.setPixelColor(i, 0,val,0,0);
-    }
+void yellowMiddleOut(uint16_t duration_ms = 650) {
+  // How many animation steps (pairs of LEDs to light up)
+  int steps = NUM_LEDS / 2 + (NUM_LEDS % 2 ? 1 : 0);
+  uint16_t frameDelay = duration_ms / steps;
+
+  // Turn off all LEDs first
+  stripOff();
+
+  for (int i = 0; i < steps; i++) {
+    int midLeft  = (NUM_LEDS - 1) / 2 - i;
+    int midRight = NUM_LEDS / 2 + i;
+    uint32_t yellow = strip.Color(255, 180, 0, 0); // Bright yellow
+
+    if (midLeft >= 0) strip.setPixelColor(midLeft, yellow);
+    if (midRight < NUM_LEDS) strip.setPixelColor(midRight, yellow);
+
     strip.show();
     delay(frameDelay);
   }
+  // brief hold at max brightness
+  delay(180);
   stripOff();
 }
+void blueBladeExtend(uint16_t extend_ms = 480) {
+  uint16_t frameDelay = extend_ms / NUM_LEDS;
+  uint32_t electricBlue = strip.Color(60, 200, 255, 0);
+  stripOff();
+  for (int i = 0; i < NUM_LEDS; i++) {
+    strip.setPixelColor(i, electricBlue);
+    strip.show();
+    delay(frameDelay);
+  }
+}
+void blueBladeRetract(uint16_t retract_ms = 420) {
+  uint16_t frameDelay = retract_ms / NUM_LEDS;
+  for (int i = NUM_LEDS - 1; i >= 0; i--) {
+    strip.setPixelColor(i, 0,0,0,0);
+    strip.show();
+    delay(frameDelay);
+  }
+}
+// void movingGreenWave(uint16_t duration_ms = 750) {
+//   uint8_t frames = 24;
+//   uint8_t frameDelay = duration_ms / frames;
+//   for (uint8_t f = 0; f < frames; f++) {
+//     for (uint8_t i = 0; i < NUM_LEDS; i++) {
+//       int d = abs((int)i - (f * NUM_LEDS / frames));
+//       uint8_t val = (d < 4) ? 200 - 45 * d : 0;
+//       strip.setPixelColor(i, 0,val,0,0);
+//     }
+//     strip.show();
+//     delay(frameDelay);
+//   }
+//   stripOff();
+// }
 void showGradientBlade(int count, uint16_t baseHue) {
   count = constrain(count, 0, NUM_LEDS);
   uint16_t delta = 4000;
@@ -263,7 +304,10 @@ bool isSwingDetected() {
 }
 
 void runGame() {
-  unsigned long interval = (modeCount==1 ? 4700 : modeCount==2 ? 3800 : 2800);
+  unsigned long baseInterval = (modeCount==1 ? 4700 : modeCount==2 ? 3800 : 2800);
+  unsigned long interval = baseInterval;
+  const unsigned long minInterval = 600; // ms
+
   unsigned long lastCueTime = millis();
   int score = 0;
 
@@ -348,7 +392,7 @@ void runGame() {
           }
           curSwing = isSwingDetected();
           if (!lastSwingState && curSwing) {
-            movingGreenWave();
+            yellowMiddleOut();
             correct = true; break;
           }
           lastSwingState = curSwing;
@@ -359,6 +403,7 @@ void runGame() {
         }
       }
       else if (cmd == 2) { // Sheath
+        blueBladeExtend();
         long sheathBaseEnc = encPosition;
         bool curSheath, lastSheathState = (digitalRead(SHEATH_PIN) == LOW);
         while (millis() - start < interval) {
@@ -370,7 +415,7 @@ void runGame() {
           }
           curSheath = (digitalRead(SHEATH_PIN) == LOW);
           if (!lastSheathState && curSheath) {
-            movingGreenWave();
+            blueBladeRetract();
             correct = true; break;
           }
           lastSheathState = curSheath;
@@ -384,6 +429,11 @@ void runGame() {
       if (!correct) { flashRed(); playSound(FX_GAME_OVER); showGameOver(score); return; }
 
       score++;
+      // Decrease interval for next round, but we shouldn't go below minInterval -- i think
+      if (interval > minInterval + 100) interval -= 100;
+      else interval = minInterval;
+
+      // Score logic if game reaches 99 points (which really who's gonna get there)
       if(score>=99){
         stripOff();
         playSound(FX_GAME_OVER);
