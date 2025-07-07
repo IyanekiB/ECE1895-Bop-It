@@ -15,7 +15,7 @@
 #define SHEATH_PIN        6
 
 #define NEOPIXEL_PIN      7
-#define NUM_LEDS         60
+#define NUM_LEDS         30   // Change this as well after debugging
 
 #define ENC_A             5   // Terminal A (right-most pin when encoder is facing you)
 #define ENC_B             8   // Terminal B (left-most pin when encoder is facing you)
@@ -26,7 +26,7 @@
 #define FX_GAME_ON        12  // T3 - Game On
 #define FX_GAME_OVER      13  // T4 - Game Over
 
-Adafruit_NeoPixel strip(NUM_LEDS, NEOPIXEL_PIN, NEO_GRBW + NEO_KHZ800);
+Adafruit_NeoPixel strip(NUM_LEDS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800); // Remember to change this depending on what strip we end up using
 Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
 
 long encPosition = 0;
@@ -108,20 +108,6 @@ void blueBladeRetract(uint16_t retract_ms = 420) {
     delay(frameDelay);
   }
 }
-// void movingGreenWave(uint16_t duration_ms = 750) {
-//   uint8_t frames = 24;
-//   uint8_t frameDelay = duration_ms / frames;
-//   for (uint8_t f = 0; f < frames; f++) {
-//     for (uint8_t i = 0; i < NUM_LEDS; i++) {
-//       int d = abs((int)i - (f * NUM_LEDS / frames));
-//       uint8_t val = (d < 4) ? 200 - 45 * d : 0;
-//       strip.setPixelColor(i, 0,val,0,0);
-//     }
-//     strip.show();
-//     delay(frameDelay);
-//   }
-//   stripOff();
-// }
 void showGradientBlade(int count, uint16_t baseHue) {
   count = constrain(count, 0, NUM_LEDS);
   uint16_t delta = 4000;
@@ -180,12 +166,17 @@ void showMenu(uint8_t highlight) {
   display.setTextSize(1);
   display.setCursor(0,0);
   display.println(F("Mode Select:"));
-  for (uint8_t i = 1; i <= 3; i++) {
+  for (uint8_t i = 1; i <= 4; i++) {
     display.setCursor(0, 18 + (i-1)*12);
     display.print(i == highlight ? F("> ") : F("  "));
     display.print(i);
     display.print(F(") "));
-    display.println(i == 1 ? F("Easy") : i == 2 ? F("Medium") : F("Hard"));
+    switch(i) {
+      case 1: display.println(F("Easy"));   break;
+      case 2: display.println(F("Medium")); break;
+      case 3: display.println(F("Hard"));   break;
+      case 4: display.println(F("Quick"));  break;
+    }
   }
   display.display();
 }
@@ -193,9 +184,16 @@ void showModeConfirmation(uint8_t mode) {
   display.clearDisplay();
   display.setTextSize(2);
   display.setCursor(0,16);
-  if      (mode == 1) display.println(F("Easy Mode"));
-  else if (mode == 2) display.println(F("Medium Mode"));
-  else                display.println(F("Hard Mode"));
+  switch(mode) {
+    case 1: display.println(F("Easy Mode"));   break;
+    case 2: display.println(F("Medium Mode")); break;
+    case 3: display.println(F("Hard Mode"));   break;
+    case 4: display.println(F("Quick Mode"));
+            display.setTextSize(1);
+            display.setCursor(0,40);
+            display.println(F("Start at 90pts"));
+            break;
+  }
   display.display();
   delay(1300);
   display.clearDisplay(); display.display();
@@ -218,7 +216,7 @@ void modeSelectMenu() {
       delay(25);
       m = digitalRead(MODE_BTN_PIN);
       if (m == LOW) {
-        modeCount = (modeCount % 3) + 1;
+        modeCount = (modeCount % 4) + 1;
         showMenu(modeCount);
         lastPress = millis();
       }
@@ -304,12 +302,21 @@ bool isSwingDetected() {
 }
 
 void runGame() {
-  unsigned long baseInterval = (modeCount==1 ? 4700 : modeCount==2 ? 3800 : 2800);
+  unsigned long baseInterval;
+  int score = 0;
+
+  switch(modeCount) {
+    case 1: baseInterval = 4700; score = 0;  break;
+    case 2: baseInterval = 3800; score = 0;  break;
+    case 3: baseInterval = 2800; score = 0;  break;
+    case 4: baseInterval = 4700; score = 90; break;
+  }
+  // unsigned long baseInterval = (modeCount==1 ? 4700 : modeCount==2 ? 3800 : 2800);
   unsigned long interval = baseInterval;
   const unsigned long minInterval = 600; // ms
 
   unsigned long lastCueTime = millis();
-  int score = 0;
+  // int score = 0;
 
   display.clearDisplay();
   display.setTextSize(1);
@@ -357,11 +364,11 @@ void runGame() {
         while (millis() - start < interval) {
           updateEncoder();
           if (checkPowerToggle()) { powerDownOLED(); return; }
-          long curEnc = encPosition;
-          int delta = abs(curEnc - baseEnc);
-          if (delta > maxDelta) maxDelta = delta;
-          int num_lit = maxDelta / 1;
-          num_lit = constrain(num_lit, 0, NUM_LEDS);
+          long curEnc = encPosition;                  // Current encoder position
+          int delta = abs(curEnc - baseEnc);          // How far the encoder has moved since cue
+          if (delta > maxDelta) maxDelta = delta;     // Track maximum distance for this round
+          int num_lit = (maxDelta / 2) * 2;
+          num_lit = constrain(num_lit, 0, NUM_LEDS);  // For every 2 encoder ticks, light up 2 LEDs and clamp to LED strip length
           if (num_lit != prevLit) {
             showGradientBlade(num_lit, boostHue);
             prevLit = num_lit;
@@ -430,7 +437,7 @@ void runGame() {
 
       score++;
       // Decrease interval for next round, but we shouldn't go below minInterval -- i think
-      if (interval > minInterval + 100) interval -= 100;
+      if (interval > minInterval + 100) interval -= 200;
       else interval = minInterval;
 
       // Score logic if game reaches 99 points (which really who's gonna get there)
@@ -471,7 +478,7 @@ void showGameOver(int finalScore) {
     EEPROM.put(EEPROM_ADDR_HIGH, highScore);
   }
   display.setCursor(0,44);
-  display.print(F("High: "));
+  display.print(F("High Score: "));
   display.println(highScore);
   display.display();
 
@@ -479,6 +486,12 @@ void showGameOver(int finalScore) {
   while (millis() - t0 < 8000) {
     if (checkPowerToggle()) { oledOn = false; powerDownOLED(); return; }
   }
+
+  if (modeCount == 4) {
+  highScore = 0;
+  EEPROM.put(EEPROM_ADDR_HIGH, highScore);
+  }
+
   oledOn = false;
   powerDownOLED();
 }
