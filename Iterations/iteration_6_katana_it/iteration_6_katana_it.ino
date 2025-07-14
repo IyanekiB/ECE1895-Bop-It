@@ -26,12 +26,12 @@
 #define FX_GAME_ON        12  // T3 - Game On
 #define FX_GAME_OVER      13  // T4 - Game Over
 
-Adafruit_NeoPixel strip(NUM_LEDS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800); // Remember to change this depending on what strip we end up using
+Adafruit_NeoPixel strip(NUM_LEDS, NEOPIXEL_PIN, NEO_GRBW + NEO_KHZ800); // Remember to change this depending on what strip we end up using
 Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
 
 long encPosition = 0;
 int lastEncCLK = LOW;
-const float SWING_DELTA_THRESHOLD = 1.5;
+const float SWING_DELTA_THRESHOLD = 5.0;
 
 const int EEPROM_ADDR_HIGH = 0;
 int highScore = 0;
