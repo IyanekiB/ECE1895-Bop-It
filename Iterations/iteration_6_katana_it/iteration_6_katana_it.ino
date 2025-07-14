@@ -473,25 +473,23 @@ void showGameOver(int finalScore) {
   display.print(F("Score: "));
   display.println(finalScore);
 
-  if (finalScore > highScore) {
+  if ((modeCount != 4) && (finalScore > highScore)) {
     highScore = finalScore;
     EEPROM.put(EEPROM_ADDR_HIGH, highScore);
   }
   display.setCursor(0,44);
   display.print(F("High Score: "));
-  display.println(highScore);
+  if (modeCount == 4) {
+    display.println(finalScore);
+  } else {
+    display.println(highScore);
+  }
   display.display();
 
   unsigned long t0 = millis();
   while (millis() - t0 < 8000) {
     if (checkPowerToggle()) { oledOn = false; powerDownOLED(); return; }
   }
-
-  if (modeCount == 4) {
-  highScore = 0;
-  EEPROM.put(EEPROM_ADDR_HIGH, highScore);
-  }
-
   oledOn = false;
   powerDownOLED();
 }
