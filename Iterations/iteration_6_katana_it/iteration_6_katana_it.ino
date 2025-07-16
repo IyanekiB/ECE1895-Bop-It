@@ -1,9 +1,9 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <Arduino_LSM6DSOX.h>
 #include <EEPROM.h>
 #include <Adafruit_NeoPixel.h>
+#include <MPU6050.h>
 
 // Pinout
 #define OLED_WIDTH       128
@@ -28,10 +28,12 @@
 
 Adafruit_NeoPixel strip(NUM_LEDS, NEOPIXEL_PIN, NEO_GRBW + NEO_KHZ800); // Remember to change this depending on what strip we end up using
 Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
+MPU6050 mpu;
+
+#define SWING_MAG_THRESHOLD 3  // G's
 
 long encPosition = 0;
 int lastEncCLK = LOW;
-const float SWING_DELTA_THRESHOLD = 5.0;
 
 const int EEPROM_ADDR_HIGH = 0;
 int highScore = 0;
@@ -41,6 +43,7 @@ int lastModeState = HIGH;
 uint16_t boostHue = 0;
 
 float lastX = 0, lastY = 0, lastZ = 0;
+int16_t ax, ay, az;
 
 // Adafruit FX Soundboard Trigger Helper (ACTIVE LOW)
 void playSound(uint8_t fxPin) {
@@ -231,14 +234,18 @@ void modeSelectMenu() {
 
 // Setup & Loop
 void setup() {
+  delay(500);
+
   Wire.begin();
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   display.clearDisplay(); display.display();
 
-  delay(100); // Allow time for OLED to initialize
+  delay(500); // Allow time for OLED to initialize
 
-  IMU.begin();
+  mpu.initialize();
   EEPROM.get(EEPROM_ADDR_HIGH, highScore);
+
+  delay(500);
 
   pinMode(SWITCH_PIN, INPUT_PULLUP);
   pinMode(MODE_BTN_PIN, INPUT_PULLUP);
@@ -247,9 +254,13 @@ void setup() {
   pinMode(ENC_B, INPUT);
   lastEncCLK = digitalRead(ENC_A);
 
+  delay(500);
+
   strip.begin();
   strip.setBrightness(80);
   stripOff();
+
+  delay(500);
 
   // Set all FX trigger pins to OUTPUT and HIGH (idle for ACTIVE LOW)
   pinMode(FX_BOOST_PIN, OUTPUT);   digitalWrite(FX_BOOST_PIN, HIGH);
@@ -291,14 +302,18 @@ void loop() {
 
 // IMU and Game Logic
 bool isSwingDetected() {
-  float x, y, z;
-  if (IMU.accelerationAvailable()) {
-    IMU.readAcceleration(x, y, z);
-    float dx = abs(x - lastX), dy = abs(y - lastY), dz = abs(z - lastZ);
-    lastX = x; lastY = y; lastZ = z;
-    return (dx > SWING_DELTA_THRESHOLD || dy > SWING_DELTA_THRESHOLD || dz > SWING_DELTA_THRESHOLD);
-  }
-  return false;
+  mpu.getAcceleration(&ax, &ay, &az);
+
+  float gx = ax / 16384.0;
+  float gy = ay / 16384.0;
+  float gz = az / 16384.0;
+
+  float mag = sqrt(gx*gx + gy*gy + gz*gz);
+
+  Serial.print("Accel Mag: "); Serial.println(mag); // For tuning
+
+  // At rest, mag ~1.0; swinging sharply gives higher values
+  return (mag > SWING_MAG_THRESHOLD);
 }
 
 void runGame() {
