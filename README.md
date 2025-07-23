@@ -85,7 +85,7 @@ A handheld, cyberpunk-inspired reaction game built into a custom 3D-printed kata
 
 ## How to Build & Reproduce
 
-1. **Print enclosure parts** (`hardware/enclosure/`) and test-fit display, buttons, encoder, blade strip.
+1. **Print enclosure parts** (`Enclosure Design Files/`) and test-fit display, buttons, encoder, blade strip.
 2. **Assemble PCB** and mainboard, install in hilt and blade as per wiring diagram (`hardware/PCB/`).
 3. **Wire up** OLED, FX Soundboard, NeoPixels, switches, and battery following the pin mapping.
 4. **Flash the latest `.ino`** (from the root) to ATmega328P (Arduino UNO bootloader recommended).
