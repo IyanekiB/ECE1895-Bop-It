@@ -86,10 +86,10 @@ A handheld, cyberpunk-inspired reaction game built into a custom 3D-printed kata
 ## How to Build & Reproduce
 
 1. **Print enclosure parts** (`Enclosure Design Files/`) and test-fit display, buttons, encoder, blade strip.
-2. **Assemble PCB** and mainboard, install in hilt and blade as per wiring diagram (`hardware/PCB/`).
+2. **Assemble PCB** and mainboard, install in hilt and blade as per wiring diagram (`Altium/`).
 3. **Wire up** OLED, FX Soundboard, NeoPixels, switches, and battery following the pin mapping.
 4. **Flash the latest `.ino`** (from the root) to ATmega328P (Arduino UNO bootloader recommended).
-5. **Copy audio files** to the FX Soundboard micro-SD card (`audio/wav/`).
+5. **Copy audio files** to the FX Soundboard micro-SD card.
 6. **Power on and play!**
     - Select mode and respond to prompts.
     - Scores are saved; Quick Mode high scores are tracked separately.
